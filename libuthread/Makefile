@@ -4,7 +4,8 @@
 # Target library
 # test_queue
 lib := libuthread.a
-objs := queue.o uthread.o context.o preempt.o
+keepObjs := queue.o thread.o
+rmObjs := sem.o
 
 CC := gcc
 CFLAGS := -Wall -Wextra -Werror
@@ -15,13 +16,13 @@ ifneq ($(V),1)
 Q = @
 endif
 
-all: $(lib) $(tests)
+all: $(lib)
 
-deps := $(patsubst %.o,%.d,$(objs))
+deps := $(patsubst %.o,%.d,$(keepObjs),$(rmObjs))
 -include $(deps)
 DEPFLAGS = -MMD -MF $(@:.o=.d)
 
-libuthread.a: $(objs)
+libuthread.a: $(keepObjs) $(rmObjs)
 	@echo "AR $@"
 	$(Q)$(LIBC) $(LIBFLAGS) $@ $^
 
@@ -30,4 +31,4 @@ libuthread.a: $(objs)
 	$(Q)$(CC) $(CFLAGS) -c -o $@ $< $(DEPFLAGS)
 
 clean:
-	rm -f $(lib) $(objs) $(deps) $(testObjs:.o=.d)
+	rm -f $(lib) $(rmObjs) $(deps) *.d
