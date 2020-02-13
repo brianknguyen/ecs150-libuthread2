@@ -7,7 +7,7 @@
 
 #include <stdio.h>
 
-typdef stuct semaphore {
+typedef struct semaphore {
 	size_t count;
 	queue_t blockedQueue;
 } semaphore;
