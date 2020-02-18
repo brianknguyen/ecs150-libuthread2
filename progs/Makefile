@@ -4,6 +4,7 @@ programs := \
 	sem_count.x \
 	sem_buffer.x \
 	sem_prime.x \
+	tps_simple.x
 
 ## *** IMPORTANT *** ##
 ##	You should NOT have to modify anything below

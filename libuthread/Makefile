@@ -5,7 +5,7 @@
 # test_queue
 lib := libuthread.a
 keepObjs := queue.o thread.o
-rmObjs := sem.o
+rmObjs := sem.o tps.o
 
 CC := gcc
 CFLAGS := -Wall -Wextra -Werror
