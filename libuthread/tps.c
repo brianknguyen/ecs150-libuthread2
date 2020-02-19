@@ -14,12 +14,27 @@
 
 /* TODO: Phase 2 */
 
+typedef struct Page {
+	char* addr;
+	int count;
+} Page;
+
 typedef struct TPS {
-	char* page;
+	Page* page;
 	pthread_t tid;
 } TPS;
 
 queue_t tpsQueue = NULL;
+
+static int find_TPS_From_Page(void *data, void* arg)
+{
+	TPS* a = (TPS*)data;
+	void* match = arg;
+	if((void*) a->page == match){
+		return 1;
+	}
+	return 0;
+}
 
 // Find TPS based on tid
 static int find_TPS(void *data, void *arg)
@@ -32,10 +47,39 @@ static int find_TPS(void *data, void *arg)
     return 0;
 }
 
+static void segv_handler(int sig, siginfo_t *si, __attribute__((unused)) void *context)
+{
+    /*
+     * Get the address corresponding to the beginning of the page where the
+     * fault occurred
+     */
+    void* p_fault = (void*)((uintptr_t)si->si_addr & ~(TPS_SIZE - 1));
+
+	TPS* foundTPS = NULL;
+	queue_iterate(tpsQueue, find_TPS_From_Page, (void*) p_fault, (void**) &foundTPS);
+
+    if (foundTPS != NULL)
+        /* Printf the following error message */
+        fprintf(stderr, "TPS protection error!\n");
+
+    /* In any case, restore the default signal handlers */
+    signal(SIGSEGV, SIG_DFL);
+    signal(SIGBUS, SIG_DFL);
+    /* And transmit the signal again in order to cause the program to crash */
+    raise(sig);
+}
+
 int tps_init(int segv)
 {
-	int hi = segv;
-	hi++;
+	if (segv) {
+		struct sigaction sa;
+
+		sigemptyset(&sa.sa_mask);
+		sa.sa_flags = SA_SIGINFO;
+		sa.sa_sigaction = segv_handler;
+		sigaction(SIGBUS, &sa, NULL);
+		sigaction(SIGSEGV, &sa, NULL);
+    }
 	return 0;
 }
 
@@ -66,14 +110,18 @@ int tps_create(void)
 	exit_critical_section();
 
 	// Allocate page for TPS
-	void* page = mmap(NULL, TPS_SIZE, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
-	if (page == (void*) -1) return -1;
+	void* pageAddr = mmap(NULL, TPS_SIZE, PROT_NONE, MAP_PRIVATE | MAP_ANON, -1, 0);
+	if (pageAddr == (void*) -1) return -1;
 
-	// Add new TPS to queue	
+	Page* newPage = malloc(sizeof(Page));
+	newPage->addr = pageAddr;
+	newPage->count = 1;
+
 	TPS* newTPS = malloc(sizeof(TPS));
-	newTPS->page = page;
+	newTPS->page = newPage;
 	newTPS->tid = pthread_self();
 
+	// Add new TPS to queue	
 	enter_critical_section();
 	if (queue_enqueue(tpsQueue, newTPS) < 0) {
 		exit_critical_section();
@@ -108,7 +156,10 @@ int tps_read(size_t offset, size_t length, void *buffer)
 		exit_critical_section();
 		return -1;
 	}
-	memcpy(buffer, foundTPS->page + offset, length);
+
+	mprotect(foundTPS->page->addr, length, PROT_READ);
+	memcpy(buffer, foundTPS->page->addr + offset, length);
+	mprotect(foundTPS->page->addr, length, PROT_NONE);
 	exit_critical_section();
 
 	return 0;
@@ -131,16 +182,28 @@ int tps_write(size_t offset, size_t length, void *buffer)
 		exit_critical_section();
 		return -1;
 	}
-	memcpy(foundTPS->page + offset, buffer, length);
+	if (foundTPS->page->count > 1) {
+		// Allocate page for TPS
+		void* pageAddr = mmap(NULL, TPS_SIZE, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
+		if (pageAddr == (void*) -1) return -1;
+		Page* newPage = malloc(sizeof(Page));
+		newPage->addr = pageAddr;
+		newPage->count = 1;
+		mprotect(foundTPS->page->addr, length, PROT_WRITE | PROT_READ);
+		memcpy(newPage->addr, foundTPS->page->addr, TPS_SIZE);
+		foundTPS->page->count--;
+		foundTPS->page = newPage;
+	}
+	
+	mprotect(foundTPS->page->addr, length, PROT_WRITE);
+	memcpy(foundTPS->page->addr + offset, buffer, length);
+	mprotect(foundTPS->page->addr, length, PROT_NONE);
 	exit_critical_section();
 	return 0;
 }
 
 int tps_clone(pthread_t tid)
 {
-	void* page = mmap(NULL, TPS_SIZE, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
-	if (page == (void*) -1) return -1;
-	
 	// Find TPS
 	TPS* foundTPS = NULL;
 	enter_critical_section();
@@ -148,13 +211,17 @@ int tps_clone(pthread_t tid)
 		return -1;
 	}
 	
-	memcpy(page, foundTPS->page, TPS_SIZE);
+	if (foundTPS == NULL) {
+		exit_critical_section();
+		return -1;
+	}
 	TPS* newTPS = malloc(sizeof(TPS));
-	newTPS->page = page;
+	newTPS->page = foundTPS->page;
 	newTPS->tid = pthread_self();
-
+	newTPS->page->count++;
 	queue_enqueue(tpsQueue, newTPS);
-
+	printf("clone tid: %ld\n", newTPS->tid);
+	exit_critical_section();
 	return 0;
 }
 
