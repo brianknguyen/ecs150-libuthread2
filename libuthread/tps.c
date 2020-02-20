@@ -30,7 +30,7 @@ static int find_TPS_From_Page(void *data, void* arg)
 {
 	TPS* a = (TPS*)data;
 	void* match = arg;
-	if((void*) a->page == match){
+	if((void*) a->page->addr == match){
 		return 1;
 	}
 	return 0;
@@ -96,13 +96,14 @@ int tps_create(void)
 	}
 	exit_critical_section();
 
-	// If the current thread already has a TPS, error
+	// Attempt to find thread's current TPS
 	TPS* foundTPS = NULL;
 	enter_critical_section();
 	if (queue_iterate(tpsQueue, find_TPS, (void*) pthread_self(), (void**) &foundTPS) < 0) {
 		exit_critical_section();
 		return -1;
 	}
+	// If the current thread already has a TPS, error
 	if (foundTPS != NULL) {
 		exit_critical_section();
 		return -1;
@@ -134,6 +135,29 @@ int tps_create(void)
 
 int tps_destroy(void)
 {
+	TPS* foundTPS = NULL;
+	enter_critical_section();
+	if (queue_iterate(tpsQueue, find_TPS, (void*) pthread_self(), (void**) &foundTPS) < 0) {
+		exit_critical_section();
+		return -1;
+	}
+
+	if(foundTPS == NULL) {
+		exit_critical_section();
+		return -1;
+	}
+
+	if (foundTPS->page->count > 1) {
+		foundTPS->page->count--;
+	}
+	else {
+		munmap(foundTPS->page->addr, TPS_SIZE);
+		free(foundTPS->page);
+		free(foundTPS);
+	}
+
+	queue_delete(tpsQueue, foundTPS);
+	exit_critical_section();
 
 	return 0;
 }
@@ -182,6 +206,7 @@ int tps_write(size_t offset, size_t length, void *buffer)
 		exit_critical_section();
 		return -1;
 	}
+	
 	if (foundTPS->page->count > 1) {
 		// Allocate page for TPS
 		void* pageAddr = mmap(NULL, TPS_SIZE, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
@@ -204,6 +229,21 @@ int tps_write(size_t offset, size_t length, void *buffer)
 
 int tps_clone(pthread_t tid)
 {
+
+	// Attempt to find thread's current TPS
+	TPS* curTPS = NULL;
+	enter_critical_section();
+	if (queue_iterate(tpsQueue, find_TPS, (void*) pthread_self(), (void**) &curTPS) < 0) {
+		exit_critical_section();
+		return -1;
+	}
+	// If the current thread already has a TPS, error
+	if (curTPS != NULL) {
+		exit_critical_section();
+		return -1;
+	}
+	exit_critical_section();
+
 	// Find TPS
 	TPS* foundTPS = NULL;
 	enter_critical_section();
@@ -220,7 +260,6 @@ int tps_clone(pthread_t tid)
 	newTPS->tid = pthread_self();
 	newTPS->page->count++;
 	queue_enqueue(tpsQueue, newTPS);
-	printf("clone tid: %ld\n", newTPS->tid);
 	exit_critical_section();
 	return 0;
 }
