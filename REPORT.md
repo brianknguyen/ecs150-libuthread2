@@ -17,8 +17,27 @@ other threads are currently waiting for theresource.
 
 ### Create and Destory
 
-When calling sem_create(count), a new semaphore will be initialized with given count
-and a queue will be created. Upon calling sem_destroy(), blockedQueue's length
-is checked to make sure that there are no threads currently being blocked. If
-blockedQueue is empty, then the queue is destroyed and the passed semaphore
-pointer is freed.
+When calling sem_create(count), a new semaphore will be initialized with given
+count and a queue will be created. Upon calling sem_destroy(), blockedQueue's
+length is checked to make sure that there are no threads currently being
+blocked. If blockedQueue is empty, then the queue is destroyed and the passed
+semaphore pointer is freed.
+
+## Implementing the TPS
+
+Our Thread Private Storage memory area was implemented by using two structs as
+well as a global TPS queue.
+
+The first struct is Page which contains the address of memory that is being
+protected and a count so we are aware of how many threads are using up the
+storage space.
+
+The second struct we have is TPS which holds a pointer to Page struct as well as
+thread ID. This second struct was implemented to ensure that multiple threads
+can point to the same memory after cloning.
+
+### TPS Init
+
+
+
+### TPS Read and Write 
