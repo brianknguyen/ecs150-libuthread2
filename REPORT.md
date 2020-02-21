@@ -36,10 +36,6 @@ The second struct we have is TPS which holds a pointer to Page struct as well as
 thread ID. This second struct was implemented to ensure that multiple threads
 can point to the same memory after cloning.
 
-### TPS Init
-
-
-
 ### TPS Read and Write
 
 In tps_read(), we first check to see that buffer is not NULL and
