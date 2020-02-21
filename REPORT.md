@@ -40,4 +40,10 @@ can point to the same memory after cloning.
 
 
 
-### TPS Read and Write 
+### TPS Read and Write
+
+In tps_read() and tps_write(), we first check to see that buffer is not NULL and
+that the thread has a TPS in our tpsQueue. After these checks, we use
+queue_iterate() and our find_TPS() in order to find the TPS in our queue. In
+tps_read(), the foundTPS ptr of the referenced page is then given temporary read
+rights. Using memcpy(), we then store the proper data into the buffer.
